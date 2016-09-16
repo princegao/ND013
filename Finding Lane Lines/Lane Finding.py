@@ -44,7 +44,7 @@ colorSelect = np.copy(image)
 # Defining lane boundaries 
 leftBottom = [100,539]
 rightBottom = [859, 539]
-apex = [475, 320]
+apex = [475, 325]
 
 # Creating region of interest 
 leftFit = np.polyfit((leftBottom[0], apex[0]), (leftBottom[1], apex[1]), 1)
