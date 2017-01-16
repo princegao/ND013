@@ -2,7 +2,10 @@
 ####################################################################################################
 # Name: Lane Finding
 # Coder: Janson Fong
-# Description: 
+# Description:
+#	Given a video with lane lines, this script outputs a video with lane lines highlighted in red.
+# Change the input and output name in the main program to execute script on a different video in 
+# your directory. 
 #
 ####################################################################################################
 
@@ -23,45 +26,21 @@ import math
 # Class Definitions
 ####################################################################################################
 
-#
-# The SectionApproximation class models a section as a straight line (y = mx + b). 
-#
-# Instantiate:
-# 	To create an instance of this class, specify the start and end point of a section.
-#
-# Syntax:
-#	SectionApproximation(P1, P2)
-#
-# Parameters:
-#	Input Type: List[]
-#	P1 = [X1, Y1]
-#	P2 = [X2, Y2]
-#
-# Attributes:
-#
-# 	sectionSlope(): Returns the slope of section (m)
-#	Return Type: Float
-#	Return: m
-#
-#  	sectionIntercept(): Returns the intercept of a section (b)
-#	Return Type: Float
-#	Return: b
-#
-#	distancePointToSection(P0): Returns the distance between point P0 and the defined section 
-#	Input Type: List[]
-#	P0 = [X0, Y0]
-#	Return Type: Float
-#	Return: distance
-#
-
-class SectionApproximation:
+class Line:
+	'''
+	This class defines a line given two points. The slope and intercept of 
+	a line can be calculated via the slope and intercept method
+	'''
 	def __init__(self, P1, P2):
 		self.X1 = P1[0]
 		self.Y1 = P1[1]
 		self.X2 = P2[0]
 		self.Y2 = P2[1]
 
-	def sectionSlope(self):
+	def slope(self):
+		'''
+		THis method returns the slope of a line defined by P1 and P2
+		'''
 		if (self.X2 - self.X1 != 0):
 			self.m = (self.Y2 - self.Y1)/(self.X2 - self.X1)
 		else:
@@ -69,20 +48,153 @@ class SectionApproximation:
 
 		return self.m
 
-	def sectionIntercept(self):
+	def intercept(self):
+		'''
+		This method returns the intercept of a line defined by P1 and P2
+		'''
 		self.b = self.Y2 - self.m*self.X2
 
 		return self.b
 
-	def distancePointToSection(self, P0):
-		X0 = P0[0]
-		Y0 = P0[1]
+class FindLane:
+	'''
+	This class determines left and right lane given a set of hough lines
+	sortByPoint and sortBySlope are two methods given to determine the 
+	start and end points of a lane. A lane is represented as an instance 
+	of the 'Line' class
+	'''
+	def __init__(self, lines):
+		self.lines = lines 
 
-		num = abs((self.Y2 - self.Y1)*X0 - (self.X2 - self.X1)*Y0 + self.X2*self.Y1 - self.Y2*self.X1)
-		den = math.sqrt((self.Y2 - self.Y1)**2 + (self.X2 - self.X1)**2)
-		self.distance = num/den
+	def sortByPoint(self):
+		'''
+		The sortByPoint method return the start and end points of lanes by 
+		returning points with minimum and maximum y values respectively
+		'''
+		rightStartPoint = [0, 900]
+		rightEndPoint = [0, 0]
+		leftStartPoint = [0, 900]
+		leftEndPoint = [0, 0]
 
-		return self.distance
+		for eachLine in self.lines:
+			for X1, Y1, X2, Y2 in eachLine:
+				P1 = [X1, Y1]
+				P2 = [X2, Y2]
+				line = Line(P1, P2)
+				slope  = line.slope()
+
+				if (slope > 0):
+					rightStartPoint = self.__findStartPoint(P1, P2, rightStartPoint)
+					rightEndPoint = self.__findEndPoint(P1, P2, rightEndPoint)
+				elif (slope < 0 and slope < -0.1):
+					leftStartPoint = self.__findStartPoint(P1, P2, leftStartPoint)
+					leftEndPoint = self.__findEndPoint(P1, P2, leftEndPoint)
+
+		self.rightLane = Line(rightStartPoint, rightEndPoint)
+		self.leftLane = Line(leftStartPoint, leftEndPoint)
+
+	def sortBySlope(self):
+		'''
+		The sortBySlope method return the start and end points of lanes by
+		averaging the slope and intercept of a set of lines. Using the averaged 
+		slope and intercept, the start and end points of lanes are calculated 
+		'''
+		START_Y = 375
+		END_Y = 900
+		ZERO = 0.0
+		rightLane = {}
+		leftLane = {}
+
+		for eachLine in self.lines:
+			for X1, Y1, X2, Y2 in eachLine:
+				P1 = [X1, Y1]
+				P2 = [X2, Y2]
+				line = Line(P1, P2)
+				slope = line.slope()
+				intercept = line.intercept()
+
+				if (slope > 0):
+					rightLane[slope] = intercept
+				elif (slope < 0):
+					leftLane[slope] = intercept
+
+		# Ensuring lanes have enough points for filtering
+		if (len(rightLane) > 1 and len(leftLane) > 1):
+			# Removing extreme slopes
+			rightLane.pop(max(rightLane))
+			rightLane.pop(min(rightLane))
+			leftLane.pop(max(leftLane))
+			leftLane.pop(min(leftLane))
+
+		# Checking for division by zero errors 
+		if (len(rightLane) > 0 and len(leftLane) > 0):
+			# Averaging slope
+			rightSlope = self.__average(rightLane.keys())
+			rightIntercept = self.__average(rightLane.values())
+			leftSlope = self.__average(leftLane.keys())
+			leftIntercept = self.__average(leftLane.values())
+
+			# Calculating lane start, end point
+			rightStartPoint = self.__calculateLaneCoor(rightSlope, rightIntercept, y = START_Y)
+			rightEndPoint = self.__calculateLaneCoor(rightSlope, rightIntercept, y = END_Y)
+			leftStartPoint = self.__calculateLaneCoor(leftSlope, leftIntercept, y = START_Y)
+			leftEndPoint = self.__calculateLaneCoor(leftSlope, leftIntercept, y = END_Y)
+		else:
+			rightStartPoint = [1,1]
+			rightEndPoint = [1,1]
+			leftStartPoint = [1,1]
+			leftEndPoint = [1,1]
+
+		self.rightLane = Line(rightStartPoint, rightEndPoint)
+		self.leftLane = Line(leftStartPoint, leftEndPoint)
+
+	def __findStartPoint(self, P1, P2, startPoint):
+		'''
+		This private method returns the point with min y value
+		'''
+		if (P1[1] < P2[1]):
+			if (P1[1] < startPoint[1]):
+				return P1
+			else:
+				return startPoint
+		else:
+			if (P2[1] < startPoint[1]):
+				return P2
+			else:
+				return startPoint
+
+	def __findEndPoint(self, P1, P2, endPoint):
+		'''
+		This private method returns the point with max y value
+		'''
+		if (P1[1] > P2[1]):
+			if (P1[1] > endPoint[1]):
+				return P1
+			else:
+				return endPoint
+		else:
+			if (P2[1] > endPoint[1]):
+				return P2
+			else:
+				return endPoint
+
+	def __average(self, arrayList):
+		'''
+		This private method returns the average of an array
+		'''
+		return sum(arrayList)/len(arrayList)
+
+	def __calculateLaneCoor(self, slope, intercept, x = None, y = None):
+		'''
+		This private method calculates the x or y value of a point given
+		slope, intercept, and x or y
+		'''
+		if (x == None and y != None):
+			x = int((y - intercept)/slope)
+			return [x, y]
+		elif (x != None and y == None):
+			y = int(slope*x + intercept)
+			return [x, y]
 
 ####################################################################################################
 # Method Definitions
@@ -135,37 +247,12 @@ def draw_lines(img, lines, color=[255, 0, 0], thickness=5):
 	This function draws `lines` with `color` and `thickness`.    
 	Lines are drawn on the image inplace (mutates the image).
 	"""
-	leftLane = []
-	rightLane = []
-	leftLaneSlope = []
-	rightLaneSlope = []
-	leftLaneIntercept = []
-	rightLaneIntercept = []
-	startingY = img.shape[0]
-
-	for eachLine in lines:
-		for X1, Y1, X2, Y2 in eachLine:
-			P1 = [X1, Y1]
-			P2 = [X2, Y2]
-			line = SectionApproximation(P1, P2)
-			startingY = min(startingY, Y1, Y2)
-
-			if (line.sectionSlope() > 0):
-				rightLane.append(eachLine)
-				rightLaneSlope.append(line.m)
-				rightLaneIntercept.append(line.sectionIntercept())
-			else:
-				leftLane.append(eachLine)
-				leftLaneSlope.append(line.m)
-				leftLaneIntercept.append(line.sectionIntercept())
-
-	startingXLeft = (startingY - np.mean(leftLaneIntercept))/np.mean(leftLaneSlope)
-	endingXLeft = (img.shape[0] - np.mean(leftLaneIntercept))/np.mean(leftLaneSlope)
-	startingXRight = (startingY - np.mean(rightLaneIntercept))/np.mean(rightLaneSlope)
-	endingXRight = (img.shape[0] - np.mean(rightLaneIntercept))/np.mean(rightLaneSlope)
-	endingY = img.shape[0]
-	cv2.line(img, (int(startingXLeft), int(startingY)), (int(endingXLeft), int(endingY)), color, thickness)
-	cv2.line(img, (int(startingXRight), int(startingY)), (int(endingXRight), int(endingY)), color, thickness)
+	lane = FindLane(lines)
+	lane.sortBySlope()
+	rightLane = lane.rightLane
+	leftLane = lane.leftLane
+	cv2.line(img, (rightLane.X1, rightLane.Y1), (rightLane.X2, rightLane.Y2), color, thickness)
+	cv2.line(img, (leftLane.X1, leftLane.Y1), (leftLane.X2, leftLane.Y2), color, thickness)
 
 def hough_lines(img, rho, theta, threshold, min_line_len, max_line_gap):
     """
@@ -198,9 +285,10 @@ def removeBackground(image):
 	"""
 	ySize = image.shape[0]
 	xSize = image.shape[1]
-	apex = [xSize/2, ySize*3/8]
-	leftBottom = [0, ySize]
-	rightBottom = [xSize, ySize]
+	apex = [xSize/2, ySize/2]
+	tolerance = 75
+	leftBottom = [tolerance, ySize]
+	rightBottom = [xSize - tolerance, ySize]
 	region = np.array([[apex, leftBottom, rightBottom]], dtype=np.int32)
 	filteredImg = region_of_interest(image, region)
 
@@ -232,68 +320,38 @@ def filterGray(image, threshold):
 	return image
 
 def process_image(image):
-    blurImage = gaussian_blur(image, 5)
-    removeBackgroundImage = removeBackground(blurImage)
-    RGBFilterImage = filterColor(removeBackgroundImage)
-    grayImage = grayscale(RGBFilterImage)
-    grayFilterImage = filterGray(grayImage, 190)
-    cannyImage = canny(grayFilterImage, 80, 150)
-    houghImage = hough_lines(cannyImage, 1, np.pi/180, 5, 15, 3)
-    weightedImage = weighted_img(houghImage, image)
-    
-    return weightedImage
+	'''
+	This method returns the lanes of a image by first applying a gaussian blur,
+	removing background details, filtering RGB colors, applying a grayscale,
+	filtering a grayscale image, and applying canny transform. Red lane lines 
+	are overlayed the original image.
+	'''
+	blurImage = gaussian_blur(image, 5)
+	removeBackgroundImage = removeBackground(blurImage)
+	RGBFilterImage = filterColor(removeBackgroundImage)
+	grayImage = grayscale(RGBFilterImage)
+	grayFilterImage = filterGray(grayImage, 190)
+	cannyImage = canny(grayFilterImage, 80, 150)
+	houghImage = hough_lines(cannyImage, 1, np.pi/180, 5, 15, 3)
+	weightedImage = weighted_img(houghImage, image)
+
+	return weightedImage
+
+def laneFindVideo(title, inputVideo):
+	'''
+	This method returns a video with lane lines highlighted in red 
+	'''
+	video = title
+	clip = VideoFileClip(inputVideo)
+	videoClip = clip.fl_image(process_image)
+	videoClip.write_videofile(video, audio=False)
+
+	return video
 
 ####################################################################################################
 # Main Program
 ####################################################################################################
-'''
-figure = plt.figure()
 
-image = mpimg.imread('test_images/solidWhiteCurve.jpg')
-figure.add_subplot(331)
-plt.imshow(image)
-
-blurImage = gaussian_blur(image, 5)
-figure.add_subplot(332)
-plt.imshow(blurImage)
-
-removeBackgroundImage = removeBackground(blurImage)
-figure.add_subplot(333)
-plt.imshow(removeBackgroundImage)
-
-RGBFilterImage = filterColor(removeBackgroundImage)
-figure.add_subplot(334)
-plt.imshow(RGBFilterImage)
-
-grayImage = grayscale(RGBFilterImage)
-figure.add_subplot(335)
-plt.imshow(grayImage, cmap = 'gray')
-
-grayFilterImage = filterGray(grayImage, 190)
-figure.add_subplot(336)
-plt.imshow(grayFilterImage, cmap = 'gray')
-
-cannyImage = canny(grayFilterImage, 80, 150)
-figure.add_subplot(337)
-plt.imshow(cannyImage, cmap = 'gray')
-
-houghImage = hough_lines(cannyImage, 1, np.pi/180, 5, 15, 3)
-figure.add_subplot(338)
-plt.imshow(houghImage)
-
-weightedImage = weighted_img(houghImage, image)
-figure.add_subplot(339)
-plt.imshow(weightedImage)
-
-plt.show()
-'''
-
-white_output = 'white.mp4'
-clip1 = VideoFileClip("solidWhiteRight.mp4")
-white_clip = clip1.fl_image(process_image)
-white_clip.write_videofile(white_output, audio=False)
-
-yellow_output = 'yellow.mp4'
-clip2 = VideoFileClip('solidYellowLeft.mp4')
-yellow_clip = clip2.fl_image(process_image)
-yellow_clip.write_videofile(yellow_output, audio=False)
+laneFindVideo('white.mp4', 'solidWhiteRight.mp4')
+laneFindVideo('yellow.mp4', 'solidYellowLeft.mp4')
+laneFindVideo('extra.mp4', 'challenge.mp4')
