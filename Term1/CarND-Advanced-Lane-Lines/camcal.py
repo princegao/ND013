@@ -90,7 +90,7 @@ def main():
         Return an instance of CamCal
     '''
     logger.info('Starting camera calibration sequence')
-    images = glob.glob(r'camera_cal/calibration*.jpg')
+    images = glob.glob(r'images/calibration/calibration*.jpg')
     calibrate = CamCal(images)
     calibrate.findCorners()
 
